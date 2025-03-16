@@ -13,6 +13,7 @@ function App() {
     anthropic: false,
     openai: false
   });
+  const [responseOrder, setResponseOrder] = useState([]);
 
   const models = [
     { id: 'openai', name: 'OpenAI (GPT-4o)', color: '#2ECC71' },
@@ -43,37 +44,59 @@ function App() {
   const handleSubmit = useCallback(async () => {
     if (!sharedPrompt.trim()) return;
     
+    // Reset the response order
+    setResponseOrder([]);
+    
     // Set all models to loading
-    setLoading({ ollama: true, anthropic: true, openai: true });
+    setLoading({
+      ollama: true,
+      anthropic: true,
+      openai: true
+    });
     
     // Initialize all responses as loading
-    setResponses({ ollama: 'Loading...', anthropic: 'Loading...', openai: 'Loading...' });
+    setResponses({
+      ollama: 'Loading...',
+      anthropic: 'Loading...',
+      openai: 'Loading...'
+    });
     
-    try {
-      // Use Promise.all for parallel execution
-      const results = await Promise.all(
-        models.map(async (model) => {
-          const response = await fetchModelResponse(model.id, sharedPrompt);
-          return { id: model.id, response };
+    // Process each model independently
+    models.forEach(model => {
+      fetchModelResponse(model.id, sharedPrompt)
+        .then(response => {
+          // Update this specific model's response
+          setResponses(prev => ({
+            ...prev,
+            [model.id]: response
+          }));
+          
+          // Add this model to the response order
+          setResponseOrder(prev => [...prev, model.id]);
+          
+          // Set this model's loading state to false
+          setLoading(prev => ({
+            ...prev,
+            [model.id]: false
+          }));
         })
-      );
-      
-      // Update all responses at once
-      const newResponses = { ...responses };
-      results.forEach(result => {
-        newResponses[result.id] = result.response;
-      });
-      
-      setResponses(newResponses);
-    } catch (error) {
-      console.error('Error fetching responses:', error);
-    } finally {
-      setLoading({ ollama: false, anthropic: false, openai: false });
-    }
-  }, [sharedPrompt, fetchModelResponse, models, responses]);
+        .catch(error => {
+          // Handle errors for this specific model
+          setResponses(prev => ({
+            ...prev,
+            [model.id]: `Error: ${error.message}`
+          }));
+          
+          setLoading(prev => ({
+            ...prev,
+            [model.id]: false
+          }));
+        });
+    });
+  }, [sharedPrompt, fetchModelResponse, models]);
 
   const isLoading = Object.values(loading).some(status => status);
-
+  
   return (
     <div className="app-container">
       <h1>Exploring Different LLM Models</h1>
@@ -97,14 +120,41 @@ function App() {
         </div>
       </div>
       
+      {responseOrder.length > 0 && (
+        <div className="response-order">
+          <h3>Response Order:</h3>
+          <ol>
+            {responseOrder.map((modelId, index) => {
+              const model = models.find(m => m.id === modelId);
+              return (
+                <li key={modelId} style={{ color: model.color }}>
+                  {model.name} {index === 0 ? '(fastest)' : ''}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+      
       <div className="model-grid">
         {models.map(model => (
           <div 
             key={model.id} 
             className="model-box"
-            style={{ borderColor: model.color }}
+            style={{ 
+              borderColor: model.color,
+              // Highlight the fastest model
+              boxShadow: responseOrder[0] === model.id ? `0 0 15px ${model.color}` : 'none'
+            }}
           >
-            <h2 style={{ color: model.color }}>{model.name}</h2>
+            <h2 style={{ color: model.color }}>
+              {model.name}
+              {responseOrder.includes(model.id) && (
+                <span className="response-badge">
+                  {responseOrder.indexOf(model.id) + 1}
+                </span>
+              )}
+            </h2>
             
             <div className="response-area">
               <h3>Response:</h3>
